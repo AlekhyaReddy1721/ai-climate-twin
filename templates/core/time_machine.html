@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block title %}Time Machine — Climate Twin{% endblock %}
+{% block page_title %}⏳ Climate Time Machine{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+  <div class="card-title">Select a Year to Explore Earth's Climate History & Future</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button onclick="loadYear(1900)" class="btn btn-cyan year-btn" id="btn-1900">1900</button>
+    <button onclick="loadYear(1950)" class="btn btn-cyan year-btn" id="btn-1950">1950</button>
+    <button onclick="loadYear(2000)" class="btn btn-cyan year-btn" id="btn-2000">2000</button>
+    <button onclick="loadYear(2025)" class="btn btn-cyan year-btn" id="btn-2025">2025 ← Now</button>
+    <button onclick="loadYear(2050)" class="btn btn-cyan year-btn" id="btn-2050">2050 🔮</button>
+    <button onclick="loadYear(2100)" class="btn btn-cyan year-btn" id="btn-2100">2100 🔮</button>
+  </div>
+</div>
+
+<div class="grid-2 mb-6" id="time-data">
+  <div style="color:var(--muted);font-size:12px">Select a year above.</div>
+</div>
+
+<div class="card">
+  <div class="card-title">📈 Climate Timeline Comparison</div>
+  <div class="chart-wrap" style="height:280px"><canvas id="timeline-chart"></canvas></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const TL = {
+  years: [1900, 1950, 2000, 2025, 2050, 2100],
+  temp:  [-0.30, -0.01, 0.42, 1.45, 2.10, 3.80],
+  co2:   [296, 311, 369, 421, 480, 600],
+  sea:   [0, 72, 180, 220, 310, 650],
+  ice:   [14.5, 13.8, 12.1, 10.2, 7.5, 3.2],
+};
+
+new Chart(document.getElementById('timeline-chart'), {
+  type: 'line',
+  data: {
+    labels: TL.years,
+    datasets: [
+      { label:'Temp Anomaly (°C)', data:TL.temp, borderColor:'#ff6b35', tension:0.4, pointRadius:5, pointBackgroundColor:'#ff6b35' },
+      { label:'CO₂ (ppm÷10)',      data:TL.co2.map(v=>v/10), borderColor:'#ff3366', tension:0.4, pointRadius:5, pointBackgroundColor:'#ff3366', borderDash:[4,4] },
+      { label:'Sea Level (mm÷100)',data:TL.sea.map(v=>v/100), borderColor:'#00d4ff', tension:0.4, pointRadius:5, pointBackgroundColor:'#00d4ff' },
+      { label:'Arctic Ice (Mkm²)', data:TL.ice, borderColor:'#00ff88', tension:0.4, pointRadius:5, pointBackgroundColor:'#00ff88', borderDash:[2,4] },
+    ]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ labels:{ color:'#5a8aaa' } } },
+    scales:{
+      y:{ ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'} },
+      x:{ ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'} }
+    }
+  }
+});
+
+async function loadYear(year) {
+  document.querySelectorAll('.year-btn').forEach(b => b.style.background = '');
+  const btn = document.getElementById(`btn-${year}`);
+  if (btn) btn.style.background = 'rgba(0,212,255,0.25)';
+
+  const data = await apiFetch(`/api/time-machine/${year}/`);
+  const isFuture = year > 2025;
+  const anomColor = data.temp_anomaly > 2 ? '#ff3366' : data.temp_anomaly > 1.5 ? '#ff6b35' : data.temp_anomaly > 1 ? '#ffd700' : '#00ff88';
+
+  document.getElementById('time-data').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="metric-card" style="--accent:${anomColor}">
+        <div class="orbitron" style="font-size:48px;font-weight:900;color:${anomColor};line-height:1">${data.year}</div>
+        <div style="color:var(--muted);font-size:11px;margin-top:4px">${isFuture ? '🔮 Projected Climate Snapshot' : '📜 Historical Climate Snapshot'}</div>
+      </div>
+      <div class="grid-2">
+        <div class="metric-card" style="--accent:#ff6b35">
+          <div class="metric-label">Temp Anomaly</div>
+          <div class="metric-value" style="color:#ff6b35;font-size:22px">${data.temp_anomaly > 0 ? '+' : ''}${data.temp_anomaly}°C</div>
+        </div>
+        <div class="metric-card" style="--accent:#ff3366">
+          <div class="metric-label">CO₂</div>
+          <div class="metric-value" style="color:#ff3366;font-size:22px">${data.co2} ppm</div>
+        </div>
+        <div class="metric-card" style="--accent:#00d4ff">
+          <div class="metric-label">Sea Level Rise</div>
+          <div class="metric-value" style="color:#00d4ff;font-size:22px">+${data.sea_level} mm</div>
+        </div>
+        <div class="metric-card" style="--accent:#00ff88">
+          <div class="metric-label">Arctic Ice</div>
+          <div class="metric-value" style="color:#00ff88;font-size:22px">${data.arctic_ice} Mkm²</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">${isFuture ? '🔮 Projected Events' : '📰 Key Events'} — ${data.year}</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${data.events.map(e => `
+          <div style="display:flex;gap:10px;align-items:flex-start;padding:10px;background:rgba(0,212,255,0.04);border-radius:8px;border-left:3px solid ${isFuture ? '#ffd700' : '#00d4ff'}">
+            <span style="font-size:16px">${isFuture ? '🔮' : '📌'}</span>
+            <span style="font-size:12px">${e}</span>
+          </div>
+        `).join('')}
+      </div>
+      ${isFuture ? '<div style="margin-top:12px;font-size:11px;color:#ffd700">⚠️ Future projections based on current emission trajectories (BAU scenario)</div>' : ''}
+    </div>
+  `;
+}
+
+loadYear(2025);
+</script>
+{% endblock %}

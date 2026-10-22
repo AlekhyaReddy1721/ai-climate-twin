@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block title %}Climate Simulator — Climate Twin{% endblock %}
+{% block page_title %}⚙️ Climate Scenario Simulator{% endblock %}
+
+{% block content %}
+<div class="grid-2 mb-6">
+  <div class="card">
+    <div class="card-title">🎛️ Simulation Parameters</div>
+    <div style="margin-bottom:18px">
+      <label class="label">CO₂ Increase (ppm): <span id="co2-val" style="color:#ff3366;font-weight:700">50</span></label>
+      <input type="range" min="0" max="300" value="50" id="co2-slider" oninput="document.getElementById('co2-val').textContent=this.value">
+    </div>
+    <div style="margin-bottom:18px">
+      <label class="label">Deforestation (%): <span id="defor-val" style="color:#ff6b35;font-weight:700">10</span></label>
+      <input type="range" min="0" max="100" value="10" id="defor-slider" oninput="document.getElementById('defor-val').textContent=this.value">
+    </div>
+    <div style="margin-bottom:18px">
+      <label class="label">Renewable Energy (%): <span id="renew-val" style="color:#00ff88;font-weight:700">20</span></label>
+      <input type="range" min="0" max="100" value="20" id="renew-slider" oninput="document.getElementById('renew-val').textContent=this.value">
+    </div>
+    <button onclick="runSim()" class="btn btn-cyan btn-full">▶ Run Simulation</button>
+    <div style="margin-top:14px;font-size:11px;color:var(--muted)">
+      Adjust parameters to simulate environmental impact. The AI model calculates downstream effects on temperature, rainfall, biodiversity, and sea level.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="color:#00ff88">📊 Simulation Results</div>
+    <div id="sim-results" style="color:var(--muted);font-size:12px">Run a simulation to see results.</div>
+  </div>
+</div>
+
+<!-- Deforestation Simulator -->
+<div class="card mb-6">
+  <div class="card-title">🌲 Deforestation Impact Simulator</div>
+  <div class="grid-2">
+    <div>
+      <label class="label">Forest Loss (million ha): <span id="forest-val" style="color:#ff6b35;font-weight:700">50</span></label>
+      <input type="range" min="0" max="500" value="50" id="forest-slider" oninput="document.getElementById('forest-val').textContent=this.value" style="margin-bottom:12px">
+      <button onclick="runDeforestation()" class="btn btn-red btn-full">🌲 Simulate Forest Loss</button>
+    </div>
+    <div id="defor-results" style="color:var(--muted);font-size:12px">Adjust forest loss and run simulation.</div>
+  </div>
+</div>
+
+<!-- Scenario Comparison Chart -->
+<div class="card">
+  <div class="card-title">📈 Scenario Impact Comparison</div>
+  <div class="chart-wrap" style="height:260px"><canvas id="scenario-chart"></canvas></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const sevColors = { Minimal:'#00ff88', Moderate:'#ffd700', Severe:'#ff6b35', Catastrophic:'#ff3366' };
+
+async function runSim() {
+  const co2_change    = parseFloat(document.getElementById('co2-slider').value);
+  const deforestation = parseFloat(document.getElementById('defor-slider').value);
+  const renewables    = parseFloat(document.getElementById('renew-slider').value);
+  const data = await apiFetch('/api/simulator/run/', {
+    method:'POST', body: JSON.stringify({ co2_change, deforestation, renewables })
+  });
+  const imp = data.impacts;
+  const color = sevColors[data.severity] || '#00d4ff';
+  document.getElementById('sim-results').innerHTML = `
+    <div class="metric-card mb-3" style="--accent:${color}">
+      <div class="metric-label">Severity Assessment</div>
+      <div class="metric-value" style="color:${color};font-size:28px">${data.severity}</div>
+    </div>
+    <div class="grid-2">
+      <div class="metric-card" style="--accent:#ff6b35">
+        <div class="metric-label">Temp Change</div>
+        <div style="font-size:20px;font-weight:700;color:#ff6b35">${imp.temperature_change_c > 0 ? '+' : ''}${imp.temperature_change_c}°C</div>
+      </div>
+      <div class="metric-card" style="--accent:#00d4ff">
+        <div class="metric-label">Rainfall Change</div>
+        <div style="font-size:20px;font-weight:700;color:#00d4ff">${imp.rainfall_change_mm > 0 ? '+' : ''}${imp.rainfall_change_mm} mm</div>
+      </div>
+      <div class="metric-card" style="--accent:#ff3366">
+        <div class="metric-label">Biodiversity Loss</div>
+        <div style="font-size:20px;font-weight:700;color:#ff3366">-${imp.biodiversity_loss_percent}%</div>
+      </div>
+      <div class="metric-card" style="--accent:#00d4ff">
+        <div class="metric-label">Sea Level Rise</div>
+        <div style="font-size:20px;font-weight:700;color:#00d4ff">+${imp.sea_level_rise_mm} mm</div>
+      </div>
+    </div>
+  `;
+  updateScenarioChart(imp);
+  toast('Simulation complete', 'success');
+}
+
+async function runDeforestation() {
+  const loss = parseFloat(document.getElementById('forest-slider').value);
+  const data = await apiFetch('/api/simulator/run/', {
+    method:'POST', body: JSON.stringify({ co2_change: loss * 0.5, deforestation: loss / 5, renewables: 0 })
+  });
+  const imp = data.impacts;
+  document.getElementById('defor-results').innerHTML = `
+    <div class="grid-2">
+      <div class="metric-card" style="--accent:#ff6b35">
+        <div class="metric-label">Temp Rise</div>
+        <div style="font-size:18px;font-weight:700;color:#ff6b35">+${imp.temperature_change_c}°C</div>
+      </div>
+      <div class="metric-card" style="--accent:#00d4ff">
+        <div class="metric-label">Rainfall Loss</div>
+        <div style="font-size:18px;font-weight:700;color:#00d4ff">${imp.rainfall_change_mm} mm</div>
+      </div>
+      <div class="metric-card" style="--accent:#ff3366">
+        <div class="metric-label">Biodiversity</div>
+        <div style="font-size:18px;font-weight:700;color:#ff3366">-${imp.biodiversity_loss_percent}%</div>
+      </div>
+      <div class="metric-card" style="--accent:#ffd700">
+        <div class="metric-label">Sea Level</div>
+        <div style="font-size:18px;font-weight:700;color:#ffd700">+${imp.sea_level_rise_mm} mm</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">
+      Losing ${loss}M ha releases ~${(loss*0.5).toFixed(0)} ppm CO₂ equivalent and reduces regional rainfall by ${Math.abs(imp.rainfall_change_mm).toFixed(0)} mm/year.
+    </div>
+  `;
+}
+
+let scenarioChart = null;
+function updateScenarioChart(imp) {
+  const ctx = document.getElementById('scenario-chart');
+  if (scenarioChart) scenarioChart.destroy();
+  scenarioChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Temp Change (°C)', 'Rainfall (mm/10)', 'Biodiversity Loss (%)', 'Sea Level (mm)'],
+      datasets: [{
+        label: 'Impact',
+        data: [imp.temperature_change_c, imp.rainfall_change_mm/10, imp.biodiversity_loss_percent, imp.sea_level_rise_mm],
+        backgroundColor: ['rgba(255,107,53,0.6)','rgba(0,212,255,0.6)','rgba(255,51,102,0.6)','rgba(0,212,255,0.6)'],
+        borderColor: ['#ff6b35','#00d4ff','#ff3366','#00d4ff'],
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{ y:{ticks:{color:'#5a8aaa'},grid:{color:'rgba(0,212,255,0.05)'}}, x:{ticks:{color:'#5a8aaa'},grid:{color:'rgba(0,212,255,0.05)'}} }
+    }
+  });
+}
+</script>
+{% endblock %}

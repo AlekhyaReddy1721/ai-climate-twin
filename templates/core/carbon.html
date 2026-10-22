@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}Carbon Calculator — Climate Twin{% endblock %}
+{% block page_title %}🌿 Personal Carbon Footprint Calculator{% endblock %}
+
+{% block content %}
+<div class="grid-2 mb-6">
+  <div class="card">
+    <div class="card-title" style="color:#00ff88">📝 Enter Your Annual Activity</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label class="label">✈️ Flights (total km/year)</label>
+        <input type="number" id="flights" value="5000" class="input" placeholder="e.g. 5000">
+      </div>
+      <div>
+        <label class="label">🚗 Car Travel (km/year)</label>
+        <input type="number" id="car" value="15000" class="input" placeholder="e.g. 15000">
+      </div>
+      <div>
+        <label class="label">⚡ Electricity Usage (kWh/year)</label>
+        <input type="number" id="electricity" value="3500" class="input" placeholder="e.g. 3500">
+      </div>
+      <div>
+        <label class="label">🥩 Meat Consumption (kg/year)</label>
+        <input type="number" id="meat" value="50" class="input" placeholder="e.g. 50">
+      </div>
+      <button onclick="calcCarbon()" class="btn btn-green btn-full">🌿 Calculate My Footprint</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="color:#00ff88">📊 Your Carbon Footprint</div>
+    <div id="carbon-result" style="color:var(--muted);font-size:12px">Fill in your details and click Calculate.</div>
+  </div>
+</div>
+
+<div class="card" id="carbon-chart-card" style="display:none">
+  <div class="card-title">🥧 Emissions Breakdown</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:center">
+    <div class="chart-wrap" style="height:260px"><canvas id="carbon-chart"></canvas></div>
+    <div id="carbon-breakdown-list"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let carbonChart = null;
+
+async function calcCarbon() {
+  const data = await apiFetch('/api/carbon/calculate/', {
+    method:'POST',
+    body: JSON.stringify({
+      flights_km:      parseFloat(document.getElementById('flights').value)     || 0,
+      car_km:          parseFloat(document.getElementById('car').value)          || 0,
+      electricity_kwh: parseFloat(document.getElementById('electricity').value) || 0,
+      meat_kg:         parseFloat(document.getElementById('meat').value)         || 0,
+    })
+  });
+
+  const total = data.total_tonnes_co2;
+  const color = total < 2.5 ? '#00ff88' : total < 5 ? '#ffd700' : total < 10 ? '#ff6b35' : '#ff3366';
+  const label = total < 2.5 ? '🌱 Below Average' : total < 5 ? '🌍 Average' : total < 10 ? '⚠️ Above Average' : '🔥 High Impact';
+
+  document.getElementById('carbon-result').innerHTML = `
+    <div class="metric-card mb-4" style="--accent:${color}">
+      <div class="metric-label">Total Annual Footprint</div>
+      <div class="metric-value" style="color:${color};font-size:42px">${total.toFixed(2)}</div>
+      <div style="color:var(--muted);font-size:12px">tonnes CO₂ / year</div>
+      <div style="margin-top:8px;font-size:14px;font-weight:700;color:${color}">${label}</div>
+    </div>
+    <div class="grid-2">
+      <div class="metric-card" style="--accent:#00d4ff">
+        <div class="metric-label">vs Global Average</div>
+        <div style="font-size:22px;font-weight:700;color:#00d4ff">${data.vs_global_average}%</div>
+      </div>
+      <div class="metric-card" style="--accent:#00ff88">
+        <div class="metric-label">Trees to Offset</div>
+        <div style="font-size:22px;font-weight:700;color:#00ff88">${data.trees_to_offset}</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('carbon-chart-card').style.display = 'block';
+  const bd = data.breakdown;
+  if (carbonChart) carbonChart.destroy();
+  carbonChart = new Chart(document.getElementById('carbon-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['✈️ Flights', '🚗 Car', '⚡ Electricity', '🥩 Diet'],
+      datasets: [{
+        data: [bd.flights, bd.car, bd.electricity, bd.diet],
+        backgroundColor: ['rgba(255,51,102,0.7)','rgba(255,107,53,0.7)','rgba(255,215,0,0.7)','rgba(0,255,136,0.7)'],
+        borderColor: ['#ff3366','#ff6b35','#ffd700','#00ff88'],
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ color:'#5a8aaa', padding:12 } } }
+    }
+  });
+
+  const items = [
+    { label:'✈️ Flights', val: bd.flights, color:'#ff3366' },
+    { label:'🚗 Car',     val: bd.car,     color:'#ff6b35' },
+    { label:'⚡ Electricity', val: bd.electricity, color:'#ffd700' },
+    { label:'🥩 Diet',    val: bd.diet,    color:'#00ff88' },
+  ];
+  document.getElementById('carbon-breakdown-list').innerHTML = items.map(i => `
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
+        <span>${i.label}</span>
+        <span style="color:${i.color};font-weight:700">${i.val.toFixed(3)} t</span>
+      </div>
+      <div class="progress"><div class="progress-fill" style="width:${(i.val/total*100).toFixed(1)}%;background:${i.color}"></div></div>
+    </div>
+  `).join('');
+
+  toast('Carbon footprint calculated', 'success');
+}
+</script>
+{% endblock %}

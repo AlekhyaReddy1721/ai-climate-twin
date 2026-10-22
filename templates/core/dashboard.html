@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — AI Climate Digital Twin{% endblock %}
+{% block page_title %}📊 Global Climate Dashboard{% endblock %}
+
+{% block content %}
+<!-- KPI Row — all 8 metrics in one row -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+  <div class="metric-card" style="--accent:#ff6b35">
+    <div class="metric-label">🌡️ Global Temperature</div>
+    <div class="metric-value" style="color:#ff6b35;font-size:28px" id="m-temp">15.1°C</div>
+    <div class="metric-sub">°C average surface</div>
+  </div>
+  <div class="metric-card" style="--accent:#ff3366">
+    <div class="metric-label">💨 CO₂ Concentration</div>
+    <div class="metric-value" style="color:#ff3366;font-size:28px" id="m-co2">421 ppm</div>
+    <div class="metric-sub">ppm atmospheric</div>
+  </div>
+  <div class="metric-card" style="--accent:#00d4ff">
+    <div class="metric-label">🌊 Sea Level Rise</div>
+    <div class="metric-value" style="color:#00d4ff;font-size:28px" id="m-sea">220 mm</div>
+    <div class="metric-sub">mm since 1900</div>
+  </div>
+  <div class="metric-card" style="--accent:#00ff88">
+    <div class="metric-label">📈 Temp Anomaly</div>
+    <div class="metric-value" style="color:#00ff88;font-size:28px" id="m-anomaly">+1.45°C</div>
+    <div class="metric-sub">°C above 1951–80 baseline</div>
+  </div>
+  <div class="metric-card" style="--accent:#00d4ff">
+    <div class="metric-label">🧊 Arctic Ice Extent</div>
+    <div class="metric-value" style="color:#00d4ff;font-size:28px" id="m-ice">10.2</div>
+    <div class="metric-sub">million km²</div>
+  </div>
+  <div class="metric-card" style="--accent:#5a8aaa">
+    <div class="metric-label">🌧️ Global Rainfall</div>
+    <div class="metric-value" style="color:#5a8aaa;font-size:28px" id="m-rain">990</div>
+    <div class="metric-sub">mm / year</div>
+  </div>
+  <div class="metric-card" style="--accent:#ff6b35">
+    <div class="metric-label">🌊 Ocean Temp</div>
+    <div class="metric-value" style="color:#ff6b35;font-size:28px" id="m-ocean">17.3</div>
+    <div class="metric-sub">°C surface average</div>
+  </div>
+  <div class="metric-card" style="--accent:#ffd700">
+    <div class="metric-label">💧 Humidity</div>
+    <div class="metric-value" style="color:#ffd700;font-size:28px" id="m-humid">62</div>
+    <div class="metric-sub">% global average</div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid-2 mb-6">
+  <div class="card">
+    <div class="card-title">🌡️ Temperature Anomaly 1900–2025</div>
+    <div class="chart-wrap" style="height:210px"><canvas id="chart-temp"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">💨 CO₂ Concentration 1900–2025</div>
+    <div class="chart-wrap" style="height:210px"><canvas id="chart-co2"></canvas></div>
+  </div>
+</div>
+
+<!-- Sea Level + Alerts -->
+<div class="grid-2-1 mb-6">
+  <div class="card">
+    <div class="card-title">🌊 Sea Level Rise 1900–2025</div>
+    <div class="chart-wrap" style="height:200px"><canvas id="chart-sea"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#ff3366">🚨 Active Climate Alerts</div>
+    <div id="alerts-list"></div>
+  </div>
+</div>
+
+<!-- Region Insights -->
+<div class="card">
+  <div class="card-title">🗺️ Region Climate Insights</div>
+  <div class="flex flex-wrap gap-4 mb-4" id="region-btns"></div>
+  <div class="grid-4" id="region-data">
+    <div style="color:var(--muted);font-size:12px">Select a region above.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const REGIONS = ["Global","Arctic","Amazon","Sahara","South Asia","Europe","North America","Pacific Islands","Australia","Sub-Saharan Africa"];
+
+// Build region buttons
+const btnContainer = document.getElementById('region-btns');
+REGIONS.forEach(r => {
+  const b = document.createElement('button');
+  b.className = 'btn btn-cyan btn-sm';
+  b.textContent = r;
+  b.onclick = () => loadRegion(r);
+  btnContainer.appendChild(b);
+});
+
+async function loadDashboard() {
+  const data = await apiFetch('/api/climate/metrics/');
+  document.getElementById('m-temp').textContent    = data.global_temp + '°C';
+  document.getElementById('m-co2').textContent     = data.co2_ppm + ' ppm';
+  document.getElementById('m-sea').textContent     = data.sea_level_mm + ' mm';
+  document.getElementById('m-anomaly').textContent = '+' + data.temp_anomaly + '°C';
+  document.getElementById('m-ice').textContent     = data.arctic_ice_extent_mkm2;
+  document.getElementById('m-rain').textContent    = data.global_rainfall_mm;
+  document.getElementById('m-ocean').textContent   = data.ocean_temp_c;
+  document.getElementById('m-humid').textContent   = data.humidity_percent;
+
+  const alertsEl = document.getElementById('alerts-list');
+  alertsEl.innerHTML = data.alerts.map(a => `
+    <div class="alert-item" style="border-color:${severityColor(a.severity)}">
+      <span style="font-size:18px">${alertIcon(a.type)}</span>
+      <div style="flex:1">
+        <div style="font-weight:700;color:${severityColor(a.severity)};font-size:11px">${a.type.toUpperCase()}</div>
+        <div style="color:var(--muted);font-size:11px">${a.region}</div>
+      </div>
+      <span class="badge badge-${a.severity}">${a.severity}</span>
+    </div>
+  `).join('');
+}
+
+async function loadCharts() {
+  const data = await apiFetch('/api/climate/historical/');
+  const years = data.years;
+  const opts = (label, color) => ({
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} ${label}` } } },
+    scales: {
+      x: { ticks: { maxTicksLimit: 7, color:'#5a8aaa' }, grid: { color:'rgba(0,212,255,0.05)' } },
+      y: { ticks: { color:'#5a8aaa' }, grid: { color:'rgba(0,212,255,0.05)' } }
+    }
+  });
+
+  new Chart(document.getElementById('chart-temp'), {
+    type: 'line',
+    data: { labels: years, datasets: [{ data: data.temperature_anomaly, borderColor:'#ff6b35', backgroundColor:'rgba(255,107,53,0.08)', fill:true, tension:0.4, pointRadius:0, borderWidth:2 }] },
+    options: opts('°C', '#ff6b35')
+  });
+
+  new Chart(document.getElementById('chart-co2'), {
+    type: 'line',
+    data: { labels: years, datasets: [{ data: data.co2_ppm, borderColor:'#ff3366', backgroundColor:'rgba(255,51,102,0.08)', fill:true, tension:0.4, pointRadius:0, borderWidth:2 }] },
+    options: opts('ppm', '#ff3366')
+  });
+
+  new Chart(document.getElementById('chart-sea'), {
+    type: 'line',
+    data: { labels: years, datasets: [{ data: data.sea_level_mm, borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,0.08)', fill:true, tension:0.4, pointRadius:0, borderWidth:2 }] },
+    options: opts('mm', '#00d4ff')
+  });
+}
+
+async function loadRegion(region) {
+  document.querySelectorAll('#region-btns .btn').forEach(b => {
+    b.style.background = b.textContent === region ? 'rgba(0,212,255,0.25)' : '';
+  });
+  const data = await apiFetch(`/api/climate/region/${encodeURIComponent(region)}/`);
+  const c = data.current;
+  const risks = data.disaster_risks;
+  document.getElementById('region-data').innerHTML = `
+    <div class="metric-card" style="--accent:#ff6b35">
+      <div class="metric-label">Temperature</div>
+      <div class="metric-value" style="color:#ff6b35;font-size:20px">${c.temp}°C</div>
+    </div>
+    <div class="metric-card" style="--accent:#ff3366">
+      <div class="metric-label">CO₂</div>
+      <div class="metric-value" style="color:#ff3366;font-size:20px">${c.co2} ppm</div>
+    </div>
+    <div class="metric-card" style="--accent:#00d4ff">
+      <div class="metric-label">Rainfall</div>
+      <div class="metric-value" style="color:#00d4ff;font-size:20px">${c.rainfall} mm</div>
+    </div>
+    <div class="metric-card" style="--accent:${severityColor(c.risk)}">
+      <div class="metric-label">Risk Level</div>
+      <div class="metric-value" style="color:${severityColor(c.risk)};font-size:18px">${c.risk.toUpperCase()}</div>
+    </div>
+    ${Object.entries(risks).map(([k,v]) => `
+      <div class="metric-card" style="--accent:${riskColor(v/100)}">
+        <div class="metric-label">${k} risk</div>
+        <div style="font-size:18px;font-weight:700;color:${riskColor(v/100)}">${v}%</div>
+        <div class="progress mt-2"><div class="progress-fill" style="width:${v}%;background:${riskColor(v/100)}"></div></div>
+      </div>
+    `).join('')}
+  `;
+}
+
+loadDashboard();
+loadCharts();
+loadRegion('Global');
+</script>
+{% endblock %}

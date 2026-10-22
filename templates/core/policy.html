@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}Policy Simulator — Climate Twin{% endblock %}
+{% block page_title %}🏛️ AI Climate Policy Simulator{% endblock %}
+
+{% block content %}
+<div class="grid-2 mb-6">
+  <div class="card">
+    <div class="card-title">🎛️ Policy Parameters</div>
+    <div style="margin-bottom:18px">
+      <label class="label">Carbon Emission Reduction (%): <span id="cr-val" style="color:#00ff88;font-weight:700">20</span></label>
+      <input type="range" min="0" max="100" value="20" id="cr-slider" oninput="document.getElementById('cr-val').textContent=this.value">
+    </div>
+    <div style="margin-bottom:18px">
+      <label class="label">Renewable Energy Investment ($B): <span id="ri-val" style="color:#00d4ff;font-weight:700">100</span></label>
+      <input type="range" min="0" max="1000" value="100" id="ri-slider" oninput="document.getElementById('ri-val').textContent=this.value">
+    </div>
+    <div style="margin-bottom:18px">
+      <label class="label">Reforestation (million ha): <span id="rf-val" style="color:#00ff88;font-weight:700">50</span></label>
+      <input type="range" min="0" max="500" value="50" id="rf-slider" oninput="document.getElementById('rf-val').textContent=this.value">
+    </div>
+    <button onclick="runPolicy()" class="btn btn-cyan btn-full" style="margin-bottom:12px">▶ Simulate Policy Impact</button>
+
+    <div style="margin-top:16px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Policy Presets</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="setPreset('paris')"      class="btn btn-cyan btn-sm">🌍 Paris Agreement</button>
+        <button onclick="setPreset('aggressive')" class="btn btn-green btn-sm">⚡ Aggressive Green</button>
+        <button onclick="setPreset('minimal')"    class="btn btn-sm" style="border-color:rgba(255,215,0,0.4);color:#ffd700">📉 Minimal Action</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="color:#00ff88">📊 Policy Impact Results</div>
+    <div id="policy-result" style="color:var(--muted);font-size:12px">Configure policy parameters and run simulation.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">📈 Policy Effectiveness Comparison</div>
+  <div class="chart-wrap" style="height:260px"><canvas id="policy-chart"></canvas></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const presets = {
+  paris:      { cr:45, ri:300, rf:100 },
+  aggressive: { cr:80, ri:800, rf:300 },
+  minimal:    { cr:10, ri:50,  rf:20  },
+};
+
+function setPreset(name) {
+  const p = presets[name];
+  document.getElementById('cr-slider').value = p.cr;
+  document.getElementById('ri-slider').value = p.ri;
+  document.getElementById('rf-slider').value = p.rf;
+  document.getElementById('cr-val').textContent = p.cr;
+  document.getElementById('ri-val').textContent = p.ri;
+  document.getElementById('rf-val').textContent = p.rf;
+  runPolicy();
+}
+
+const effColors = { Low:'#ff3366', Moderate:'#ffd700', High:'#00d4ff', Transformative:'#00ff88' };
+let policyChart = null;
+
+async function runPolicy() {
+  const data = await apiFetch('/api/policy/simulate/', {
+    method:'POST',
+    body: JSON.stringify({
+      carbon_reduction:     parseFloat(document.getElementById('cr-slider').value),
+      renewable_investment: parseFloat(document.getElementById('ri-slider').value),
+      reforestation:        parseFloat(document.getElementById('rf-slider').value),
+    })
+  });
+  const b = data.benefits;
+  const color = effColors[data.effectiveness] || '#00d4ff';
+
+  document.getElementById('policy-result').innerHTML = `
+    <div class="metric-card mb-3" style="--accent:${color}">
+      <div class="metric-label">Policy Effectiveness</div>
+      <div class="metric-value" style="color:${color};font-size:28px">${data.effectiveness}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="metric-card" style="--accent:#00ff88">
+        <div class="metric-label">Temperature Reduction</div>
+        <div style="font-size:22px;font-weight:700;color:#00ff88">-${b.temperature_reduction_c}°C</div>
+      </div>
+      <div class="metric-card" style="--accent:#00d4ff">
+        <div class="metric-label">CO₂ Reduction</div>
+        <div style="font-size:22px;font-weight:700;color:#00d4ff">-${b.co2_reduction_ppm} ppm</div>
+      </div>
+      <div class="metric-card" style="--accent:#ffd700">
+        <div class="metric-label">Lives Saved (thousands)</div>
+        <div style="font-size:22px;font-weight:700;color:#ffd700">${b.lives_saved_thousands.toLocaleString()}</div>
+      </div>
+    </div>
+  `;
+
+  // Update comparison chart
+  const allPresets = ['minimal','paris','aggressive'];
+  const results = await Promise.all(allPresets.map(p =>
+    apiFetch('/api/policy/simulate/', { method:'POST', body: JSON.stringify({ carbon_reduction:presets[p].cr, renewable_investment:presets[p].ri, reforestation:presets[p].rf }) })
+  ));
+
+  if (policyChart) policyChart.destroy();
+  policyChart = new Chart(document.getElementById('policy-chart'), {
+    type: 'bar',
+    data: {
+      labels: ['Minimal Action', 'Paris Agreement', 'Aggressive Green'],
+      datasets: [
+        { label:'Temp Reduction (°C)', data: results.map(r=>r.benefits.temperature_reduction_c), backgroundColor:'rgba(0,255,136,0.6)', borderColor:'#00ff88', borderWidth:1 },
+        { label:'CO₂ Reduction (ppm÷10)', data: results.map(r=>r.benefits.co2_reduction_ppm/10), backgroundColor:'rgba(0,212,255,0.6)', borderColor:'#00d4ff', borderWidth:1 },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:'#5a8aaa' } } },
+      scales:{
+        y:{ ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'} },
+        x:{ ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'} }
+      }
+    }
+  });
+
+  toast('Policy simulation complete', 'success');
+}
+
+runPolicy();
+</script>
+{% endblock %}

@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+{% block title %}AI Reports — Climate Twin{% endblock %}
+{% block page_title %}📄 AI Climate Report Generator{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:280px 1fr;gap:16px">
+  <div class="card">
+    <div class="card-title">⚙️ Report Configuration</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label class="label">Region</label>
+        <select id="report-region" class="input">
+          <option>Global</option><option>Arctic</option><option>Amazon</option>
+          <option>South Asia</option><option>Europe</option><option>North America</option>
+          <option>Pacific Islands</option><option>Australia</option><option>Sub-Saharan Africa</option>
+        </select>
+      </div>
+      <div>
+        <label class="label">Forecast Year</label>
+        <select id="report-year" class="input">
+          <option>2030</option><option>2050</option><option>2075</option><option>2100</option>
+        </select>
+      </div>
+      <div>
+        <label class="label">Report Type</label>
+        <select id="report-type" class="input">
+          <option value="full">Full Climate Assessment</option>
+          <option value="disaster">Disaster Risk Report</option>
+          <option value="policy">Policy Recommendation</option>
+        </select>
+      </div>
+      <button onclick="generateReport()" class="btn btn-cyan btn-full">🤖 Generate AI Report</button>
+      <button onclick="printReport()" class="btn btn-sm btn-full" style="border-color:rgba(0,255,136,0.3);color:#00ff88">🖨️ Print / Export</button>
+    </div>
+  </div>
+
+  <div class="card" id="report-output" style="min-height:500px">
+    <div style="color:var(--muted);font-size:12px">Configure report settings and click Generate.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function generateReport() {
+  const region = document.getElementById('report-region').value;
+  const year   = document.getElementById('report-year').value;
+
+  document.getElementById('report-output').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;color:#00d4ff;font-size:12px">
+      <span style="animation:pulse-dot 1s infinite">⚙️</span> AI generating report for ${region} (${year})...
+    </div>
+  `;
+
+  const [metrics, regionData, tempPred, disasters, alerts] = await Promise.all([
+    apiFetch('/api/climate/metrics/'),
+    apiFetch(`/api/climate/region/${encodeURIComponent(region)}/`),
+    apiFetch(`/api/predictions/temperature/?year=${year}`),
+    apiFetch(`/api/predictions/disasters/?region=${encodeURIComponent(region)}&year=${year}`),
+    apiFetch('/api/alerts/'),
+  ]);
+
+  const now    = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+  const risks  = disasters.risks;
+  const topRisk = Object.entries(risks).sort((a,b)=>b[1]-a[1])[0];
+  const sc     = scenarioColor(tempPred.scenario);
+
+  document.getElementById('report-output').innerHTML = `
+    <div id="printable-report" style="display:flex;flex-direction:column;gap:20px">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:1px solid rgba(0,212,255,0.2)">
+        <div>
+          <div class="orbitron" style="font-size:18px;font-weight:900;color:#00d4ff;letter-spacing:2px">AI CLIMATE ASSESSMENT REPORT</div>
+          <div style="color:var(--muted);font-size:11px;margin-top:4px">Region: <strong style="color:var(--text)">${region}</strong> · Forecast: <strong style="color:var(--text)">${year}</strong> · Generated: ${now}</div>
+        </div>
+        <span class="badge badge-info">🤖 AI Generated</span>
+      </div>
+
+      <!-- Executive Summary -->
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#00d4ff;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">1. Executive Summary</div>
+        <div style="font-size:12px;line-height:1.8;color:var(--text);background:rgba(0,212,255,0.03);padding:14px;border-radius:8px;border-left:3px solid #00d4ff">
+          This AI-generated climate assessment covers the <strong>${region}</strong> region with projections to <strong>${year}</strong>.
+          Current global temperature anomaly stands at <strong style="color:#ff6b35">+${metrics.temp_anomaly}°C</strong> above pre-industrial baseline,
+          with atmospheric CO₂ at <strong style="color:#ff3366">${metrics.co2_ppm} ppm</strong>.
+          By ${year}, the region is projected to experience a temperature anomaly of
+          <strong style="color:${sc}">+${tempPred.temp_anomaly}°C</strong>,
+          classified as <strong style="color:${sc}">${tempPred.scenario}</strong>
+          with <strong style="color:#00ff88">${tempPred.confidence}%</strong> model confidence.
+        </div>
+      </div>
+
+      <!-- Current Conditions -->
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#ff6b35;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">2. Current Conditions</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+          <div class="metric-card" style="--accent:#ff6b35"><div class="metric-label">Temperature</div><div style="font-size:20px;font-weight:700;color:#ff6b35">${regionData.current.temp}°C</div></div>
+          <div class="metric-card" style="--accent:#ff3366"><div class="metric-label">CO₂</div><div style="font-size:20px;font-weight:700;color:#ff3366">${regionData.current.co2} ppm</div></div>
+          <div class="metric-card" style="--accent:#00d4ff"><div class="metric-label">Rainfall</div><div style="font-size:20px;font-weight:700;color:#00d4ff">${regionData.current.rainfall} mm/yr</div></div>
+        </div>
+      </div>
+
+      <!-- Disaster Risk -->
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#ff3366;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">3. Disaster Risk Assessment (${year})</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${Object.entries(risks).map(([k,v]) => `
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="width:80px;font-size:11px;color:var(--muted)">${k}</span>
+              <div class="progress" style="flex:1"><div class="progress-fill" style="width:${v}%;background:${riskColor(v/100)}"></div></div>
+              <span style="width:40px;text-align:right;font-size:11px;font-weight:700;color:${riskColor(v/100)}">${v}%</span>
+            </div>
+          `).join('')}
+          <div style="margin-top:6px;font-size:11px;color:#ffd700">⚠️ Highest risk: ${topRisk[0].toUpperCase()} at ${topRisk[1]}%</div>
+        </div>
+      </div>
+
+      <!-- Recommendations -->
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#00ff88;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">4. Recommendations</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${[
+            '🌱 Accelerate transition to renewable energy (target: 70%+ by 2040)',
+            '🌲 Implement large-scale reforestation programs (minimum 50M hectares)',
+            '🏭 Enforce strict carbon emission caps with international monitoring',
+            `🌊 Develop coastal flood defenses for projected sea level rise by ${year}`,
+            '💧 Establish drought-resilient water management infrastructure',
+            '🌡️ Deploy early warning systems for extreme heat events',
+          ].map(r => `
+            <div style="display:flex;gap:10px;padding:8px 12px;background:rgba(0,255,136,0.04);border-radius:6px;border-left:2px solid rgba(0,255,136,0.3);font-size:12px">${r}</div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="padding-top:12px;border-top:1px solid rgba(0,212,255,0.15);font-size:10px;color:var(--muted)">
+        <em>Report generated by AI Climate Digital Twin. Data sources: IPCC AR6, NASA GISS, NOAA Climate.gov. For research and educational purposes only.</em>
+      </div>
+    </div>
+  `;
+}
+
+function printReport() {
+  window.print();
+}
+</script>
+{% endblock %}

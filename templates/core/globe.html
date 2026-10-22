@@ -1,0 +1,463 @@
+{% extends 'base.html' %}
+{% block title %}3D Earth Globe — Climate Twin{% endblock %}
+{% block page_title %}🌐 3D Earth Digital Twin{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 300px;gap:16px">
+  <div class="card" style="padding:12px;position:relative;overflow:hidden">
+    <div id="globe-container" style="width:100%;height:520px;border-radius:10px;overflow:hidden;cursor:grab;position:relative">
+      <canvas id="globe-canvas" style="display:block;width:100%;height:100%"></canvas>
+      <div style="position:absolute;top:14px;left:14px;font-size:10px;color:rgba(0,212,255,0.7);pointer-events:none">
+        🖱️ Drag to rotate &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Click to inspect
+      </div>
+      <button id="play-btn" onclick="window.resumeRotation()" title="Resume rotation"
+        style="display:none;position:absolute;bottom:16px;right:16px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.4);color:#00d4ff;border-radius:50%;width:40px;height:40px;font-size:18px;cursor:pointer;z-index:10;transition:background 0.2s"
+        onmouseover="this.style.background='rgba(0,212,255,0.3)'"
+        onmouseout="this.style.background='rgba(0,212,255,0.15)'">▶</button>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+      <input id="place-search" type="text" placeholder="🔍 Search a place — e.g. Tokyo, Sahara, Amazon..."
+        class="input" style="flex:1;font-size:12px"
+        onkeydown="if(event.key==='Enter')searchPlace()">
+      <button onclick="searchPlace()" class="btn btn-cyan btn-sm" style="white-space:nowrap">🔍 Search</button>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="card" id="region-panel">
+      <div class="card-title">📍 Selected Region</div>
+      <div style="color:var(--muted);font-size:12px">Click anywhere on the globe to view details.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">🗺️ Risk Points</div>
+      <div id="globe-legend" style="display:flex;flex-direction:column;gap:5px;font-size:11px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📊 Global Stats</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Total Risk Points</span><span style="color:#00d4ff" id="gs-total">--</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Critical Zones</span><span style="color:#ff3366" id="gs-critical">--</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">High Risk Zones</span><span style="color:#ff6b35" id="gs-high">--</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Avg Risk Level</span><span style="color:#ffd700" id="gs-avg">--</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+(function() {
+'use strict';
+const container = document.getElementById('globe-container');
+const canvas    = document.getElementById('globe-canvas');
+const W = container.clientWidth || 600;
+const H = container.clientHeight || 520;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(W, H);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, W/H, 0.1, 1000);
+camera.position.z = 2.5;
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(5, 3, 5);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x334466, 0.6));
+
+const rotGroup = new THREE.Group();
+scene.add(rotGroup);
+
+const loader = new THREE.TextureLoader();
+const BASE = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/';
+
+const earthMat = new THREE.MeshPhongMaterial({
+  map:         loader.load(BASE+'earth_atmos_2048.jpg'),
+  bumpMap:     loader.load(BASE+'earth_normal_2048.jpg'),
+  bumpScale:   0.05,
+  specularMap: loader.load(BASE+'earth_specular_2048.jpg'),
+  specular:    new THREE.Color(0x4488aa),
+  shininess:   18,
+  transparent: true,
+  opacity:     1.0,
+});
+const earth = new THREE.Mesh(new THREE.SphereGeometry(1,64,64), earthMat);
+rotGroup.add(earth);
+
+const clouds = new THREE.Mesh(
+  new THREE.SphereGeometry(1.005,64,64),
+  new THREE.MeshPhongMaterial({ map:loader.load(BASE+'earth_clouds_1024.png'), transparent:true, opacity:0.38, depthWrite:false })
+);
+rotGroup.add(clouds);
+
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.08,64,64),
+  new THREE.MeshPhongMaterial({color:0x0066ff,transparent:true,opacity:0.07,depthWrite:false})));
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.15,64,64),
+  new THREE.MeshPhongMaterial({color:0x0099ff,transparent:true,opacity:0.03,side:THREE.BackSide,depthWrite:false})));
+
+(function(){
+  const v=[];
+  for(let i=0;i<6000;i++){const t=Math.random()*Math.PI*2,p=Math.acos(2*Math.random()-1),r=80+Math.random()*120;v.push(r*Math.sin(p)*Math.cos(t),r*Math.sin(p)*Math.sin(t),r*Math.cos(p));}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0xffffff,size:0.15,sizeAttenuation:true})));
+})();
+
+const ovCanvas=document.createElement('canvas'); ovCanvas.width=512; ovCanvas.height=256;
+const ovCtx=ovCanvas.getContext('2d');
+const ovTex=new THREE.CanvasTexture(ovCanvas);
+const ovMat=new THREE.MeshBasicMaterial({map:ovTex,transparent:true,opacity:0,depthWrite:false});
+const ovMesh=new THREE.Mesh(new THREE.SphereGeometry(1.003,64,64),ovMat);
+rotGroup.add(ovMesh);
+
+function coordTemp(lat,lng){
+  const a=Math.abs(lat);
+  let t;
+  if(a<10)t=27.5;else if(a<23.5)t=27.0-(a-10)*0.15;else if(a<35)t=25.0-(a-23.5)*0.4;
+  else if(a<50)t=20.4-(a-35)*0.6;else if(a<60)t=11.4-(a-50)*0.7;else if(a<75)t=4.4-(a-60)*0.7;else t=-6.1-(a-75)*0.5;
+  if(8<lat&&lat<35&&65<lng&&lng<100)t=28.0-(lat-8)*0.12;
+  if(-10<lat&&lat<25&&95<lng&&lng<145)t=27.5-a*0.08;
+  if(15<lat&&lat<35&&-15<lng&&lng<60)t=32.0-(lat-15)*0.15;
+  if(-10<lat&&lat<15&&-20<lng&&lng<50)t=27.0;
+  if(30<lat&&lat<45&&-10<lng&&lng<40)t=18.0-(lat-30)*0.2;
+  if(45<lat&&lat<60&&-10<lng&&lng<30)t=11.0-(lat-45)*0.4;
+  if(60<lat&&lat<72&&-10<lng&&lng<30)t=5.0-(lat-60)*0.5;
+  if(-15<lat&&lat<5&&-75<lng&&lng<-45)t=27.0;
+  if(-35<lat&&lat<-15&&115<lng&&lng<155)t=30.0+(lat+15)*0.1;
+  if(20<lat&&lat<45&&100<lng&&lng<145)t=22.0-(lat-20)*0.4;
+  if(25<lat&&lat<50&&-90<lng&&lng<-60)t=22.0-(lat-25)*0.45;
+  if(50<lat&&lat<70&&-140<lng&&lng<-60)t=4.0-(lat-50)*0.5;
+  return t;
+}
+function coordRisk(lat,lng){
+  const t=coordTemp(lat,lng),a=Math.abs(lat);let s=0;
+  if(a<25)s+=0.3;if(5<lat&&lat<30&&65<lng&&lng<110)s+=0.35;
+  if(15<lat&&lat<35&&-15<lng&&lng<60)s+=0.3;if(-35<lat&&lat<-10&&110<lng&&lng<155)s+=0.3;
+  if(5<a&&a<25&&(120<lng||(-100<lng&&lng<-60)))s+=0.25;s+=Math.max(0,(t-20)*0.015);
+  return Math.min(1,s);
+}
+function tempToRgb(t){
+  const s=[[-30,[0,0,180]],[0,[0,120,255]],[10,[0,220,180]],[20,[80,220,60]],[28,[255,220,0]],[35,[255,60,0]],[45,[180,0,0]]];
+  for(let i=1;i<s.length;i++){const[t0,c0]=s[i-1],[t1,c1]=s[i];if(t<=t1){const f=(t-t0)/(t1-t0);return[c0[0]+f*(c1[0]-c0[0]),c0[1]+f*(c1[1]-c0[1]),c0[2]+f*(c1[2]-c0[2])].map(Math.round);}}
+  return[180,0,0];
+}
+function riskToRgb(r){if(r<0.5){const f=r*2;return[Math.round(f*255),200,0];}const f=(r-0.5)*2;return[255,Math.round((1-f)*200),0];}
+
+const hmCache={};
+function ensureHeatmap(mode){
+  if(hmCache[mode]){ovCtx.putImageData(hmCache[mode],0,0);ovTex.needsUpdate=true;return;}
+  const W=ovCanvas.width,H=ovCanvas.height,img=ovCtx.createImageData(W,H);
+  for(let py=0;py<H;py++){const lat=90-(py/H)*180;for(let px=0;px<W;px++){
+    const lng=(px/W)*360-180;
+    const rgb=mode==='heat'?tempToRgb(coordTemp(lat,lng)):riskToRgb(coordRisk(lat,lng));
+    const al=mode==='heat'?160:Math.round(110+coordRisk(lat,lng)*90);
+    const idx=(py*W+px)*4;img.data[idx]=rgb[0];img.data[idx+1]=rgb[1];img.data[idx+2]=rgb[2];img.data[idx+3]=al;
+  }}
+  ovCtx.putImageData(img,0,0);hmCache[mode]=ovCtx.getImageData(0,0,W,H);ovTex.needsUpdate=true;
+}
+
+let currentLayer='default';
+function setLayer(mode){
+  currentLayer=mode;
+  ['default','heat','risk'].forEach(l=>document.getElementById('btn-'+l).style.opacity=l===mode?'1':'0.45');
+  const leg=document.getElementById('map-legend');
+  if(mode==='default'){ovMat.opacity=0;earthMat.opacity=1;clouds.visible=true;leg.style.display='none';}
+  else{
+    ensureHeatmap(mode);ovMat.opacity=0.85;earthMat.opacity=0.3;clouds.visible=false;leg.style.display='flex';
+    leg.innerHTML=mode==='heat'
+      ?'<span>Cold</span><div style="width:110px;height:9px;border-radius:3px;background:linear-gradient(to right,#0000b4,#0078ff,#00dcb4,#50dc3c,#ffdc00,#ff3c00,#b40000)"></div><span>Hot</span>'
+      :'<span>Low</span><div style="width:110px;height:9px;border-radius:3px;background:linear-gradient(to right,#00c800,#ffc800,#ff0000)"></div><span>High Risk</span>';
+  }
+}
+
+const TYPE_COLORS={flood:0x00d4ff,cyclone:0xff3366,heatwave:0xff6b35,drought:0xffd700,wildfire:0xff4400};
+let riskPoints=[],markerMeshes=[];
+function latLngToVec3(lat,lng,r){
+  const phi=(90-lat)*Math.PI/180,theta=(lng+180)*Math.PI/180;
+  return new THREE.Vector3(-r*Math.sin(phi)*Math.cos(theta),r*Math.cos(phi),r*Math.sin(phi)*Math.sin(theta));
+}
+
+let clickPin=null;
+function setClickPin(lat,lng){
+  if(clickPin){ rotGroup.remove(clickPin); clickPin=null; }
+  // Pin group: stem + head
+  const group = new THREE.Group();
+  // Glowing head
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.028, 16, 16),
+    new THREE.MeshBasicMaterial({color:0xff3366})
+  );
+  head.position.copy(latLngToVec3(lat,lng,1.04));
+  group.add(head);
+  // Outer glow ring
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.042, 16, 16),
+    new THREE.MeshBasicMaterial({color:0xff3366, transparent:true, opacity:0.25})
+  );
+  glow.position.copy(latLngToVec3(lat,lng,1.04));
+  group.add(glow);
+  // Stem line from surface to head
+  const stemPts = [
+    latLngToVec3(lat,lng,1.002),
+    latLngToVec3(lat,lng,1.04)
+  ];
+  const stemGeo = new THREE.BufferGeometry().setFromPoints(stemPts);
+  const stem = new THREE.Line(stemGeo, new THREE.LineBasicMaterial({color:0xff3366}));
+  group.add(stem);
+  rotGroup.add(group);
+  clickPin = group;
+}
+
+let isDragging=false,prevX=0,prevY=0,downX=0,downY=0;
+let autoRotate = true;
+
+function stopRotation() {
+  autoRotate = false;
+  const btn = document.getElementById('play-btn');
+  if (btn) btn.style.display = 'block';
+}
+function resumeRotation() {
+  autoRotate = true;
+  const btn = document.getElementById('play-btn');
+  if (btn) btn.style.display = 'none';
+}
+window.resumeRotation = resumeRotation;
+container.addEventListener('mousedown',e=>{isDragging=true;prevX=downX=e.clientX;prevY=downY=e.clientY;container.style.cursor='grabbing';});
+window.addEventListener('mouseup',()=>{isDragging=false;container.style.cursor='grab';});
+window.addEventListener('mousemove',e=>{
+  if(!isDragging)return;
+  rotGroup.rotation.y+=(e.clientX-prevX)*0.005;
+  rotGroup.rotation.x=Math.max(-1.2,Math.min(1.2,rotGroup.rotation.x+(e.clientY-prevY)*0.005));
+  prevX=e.clientX;prevY=e.clientY;
+});
+container.addEventListener('wheel',e=>{e.preventDefault();camera.position.z=Math.max(1.4,Math.min(5.0,camera.position.z+e.deltaY*0.003));},{passive:false});
+
+const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();
+container.addEventListener('click',e=>{
+  if(Math.sqrt((e.clientX-downX)**2+(e.clientY-downY)**2)>5)return;
+  const rect=container.getBoundingClientRect();
+  mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+  mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+  const mh=raycaster.intersectObjects(markerMeshes);
+  if(mh.length&&mh[0].object.userData.lat!==undefined){const p=mh[0].object.userData;stopRotation();setClickPin(p.lat,p.lng);fetchClimate(p.lat,p.lng);return;}
+  const eh=raycaster.intersectObject(earth);if(!eh.length)return;
+  const pt=earth.worldToLocal(eh[0].point.clone());
+  const lat=90-Math.acos(Math.max(-1,Math.min(1,pt.y)))*180/Math.PI;
+  const lng=((Math.atan2(pt.z,-pt.x)*180/Math.PI-180)%360+540)%360-180;
+  stopRotation();setClickPin(lat,lng);fetchClimate(lat,lng);
+});
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(!isDragging && autoRotate) rotGroup.rotation.y+=0.0015;
+  const t=Date.now()*0.003;
+  markerMeshes.forEach((m,i)=>{if(m.geometry&&m.geometry.type==='RingGeometry')m.material.opacity=0.15+0.2*Math.abs(Math.sin(t+i*0.7));});
+  renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener('resize',()=>{const w=container.clientWidth,h=container.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);});
+
+function countryFlag(code){if(!code||code.length!==2)return'🌍';return String.fromCodePoint(...[...code.toUpperCase()].map(c=>0x1F1E6-65+c.charCodeAt(0)));}
+async function reverseGeocode(lat,lng){
+  // Try server first
+  try{
+    const d=await apiFetch(`/api/geocode/reverse/?lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}`);
+    if(d.place_name) return{placeName:d.place_name,country:d.country||'',countryCode:d.country_code||'',isOcean:d.is_ocean||false};
+  }catch{}
+  // Direct Nominatim fallback
+  try{
+    const url=`https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(5)}&lon=${lng.toFixed(5)}&format=json&zoom=8&accept-language=en`;
+    const res=await fetch(url,{headers:{'Accept':'application/json'}});
+    const d=await res.json();
+    const addr=d.address||{};
+    const place=addr.city||addr.town||addr.village||addr.county||addr.state||addr.country||'';
+    const country=addr.country||'';
+    const code=(addr.country_code||'').toUpperCase();
+    return{placeName:place&&country?`${place}, ${country}`:place||country||'Unknown',country,countryCode:code,isOcean:false};
+  }catch{}
+  // Pure local fallback — always works offline
+  const name=localPlaceName(lat,lng);
+  return{placeName:name,country:'',countryCode:'',isOcean:localIsOcean(lat,lng)};
+}
+
+function localIsOcean(lat,lng){
+  const LAND=[[60,75,-170,-50],[15,60,-130,-60],[-60,15,-85,-30],[35,72,-15,45],[-40,38,-20,55],[10,80,25,180],[-50,-10,110,160],[60,90,-180,180],[-90,-60,-180,180]];
+  return !LAND.some(([a,b,c,d])=>lat>a&&lat<b&&lng>c&&lng<d);
+}
+
+function localPlaceName(lat,lng){
+  if(lat>70)return'Arctic';
+  if(lat<-60)return'Antarctica';
+  const regions=[
+    [60,75,-180,180,'Northern Russia / Polar'],
+    [35,72,-15,45,'Europe'],
+    [15,60,-130,-60,'North America'],
+    [-60,15,-85,-30,'South America'],
+    [-40,38,-20,55,'Africa'],
+    [10,80,25,180,'Asia'],
+    [-50,-10,110,160,'Australia & Oceania'],
+  ];
+  for(const [a,b,c,d,n] of regions) if(lat>a&&lat<b&&lng>c&&lng<d) return n;
+  return `${Math.abs(lat).toFixed(1)}°${lat>=0?'N':'S'} ${Math.abs(lng).toFixed(1)}°${lng>=0?'E':'W'}`;
+}
+
+async function fetchClimate(lat,lng,knownName=null){
+  const panel=document.getElementById('region-panel');
+  panel.innerHTML='<div class="card-title">📍 Locating...</div><div style="color:var(--muted);font-size:12px">⚙️ Fetching data...</div>';
+
+  // Use provided name directly, skip reverse geocode round-trip
+  const geo = knownName
+    ? {placeName:knownName, country:'', countryCode:'', isOcean:false}
+    : await reverseGeocode(lat,lng);
+
+  const data = await apiFetch(`/api/climate/coords/?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`).catch(()=>null)
+             || localClimateEstimate(lat,lng);
+
+  const flag = geo.countryCode&&geo.countryCode.length===2
+    ? `<span style="font-size:20px">${countryFlag(geo.countryCode)}</span>`
+    : `<span style="font-size:20px">${geo.isOcean?'🌊':'🌍'}</span>`;
+  const c=data.current, r=data.disaster_risks;
+  panel.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">${flag}<div class="card-title" style="margin:0;font-size:13px">${geo.placeName}</div></div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+      ${geo.country?`<span style="font-size:11px;color:#00d4ff">${geo.country}</span>`:''}
+      <span style="font-size:10px;color:var(--muted)">${lat.toFixed(2)}°${lat>=0?'N':'S'} ${Math.abs(lng).toFixed(2)}°${lng>=0?'E':'W'}</span>
+      <span class="badge badge-info" style="font-size:9px">${data.region||'Region'}</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:7px;font-size:12px">
+      ${[['🌡️ Temperature',c.temp+'°C','#ff6b35'],['💨 CO₂',c.co2+' ppm','#ff3366'],['🌧️ Rainfall',c.rainfall+' mm/yr','#00d4ff'],['⚠️ Risk Level',c.risk.toUpperCase(),severityColor(c.risk)]].map(([l,v,col])=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,212,255,0.1)"><span style="color:var(--muted)">${l}</span><span style="color:${col};font-weight:700">${v}</span></div>`).join('')}
+      <div style="margin-top:4px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:1px">Disaster Risks</div>
+        ${Object.entries(r).map(([k,v])=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="width:58px;font-size:10px;color:var(--muted)">${k}</span><div class="progress" style="flex:1"><div class="progress-fill" style="width:${v}%;background:${riskColor(v/100)}"></div></div><span style="font-size:10px;color:${riskColor(v/100)};width:30px;text-align:right">${v}%</span></div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// Pure JS fallback — mirrors the Python logic in views.py so the panel
+// always shows meaningful data even when the Django API is unreachable.
+function localClimateEstimate(lat,lng){
+  const absLat=Math.abs(lat);
+  let temp;
+  if(absLat<10)temp=27.5;
+  else if(absLat<23.5)temp=27.0-(absLat-10)*0.15;
+  else if(absLat<35)temp=25.0-(absLat-23.5)*0.4;
+  else if(absLat<50)temp=20.4-(absLat-35)*0.6;
+  else if(absLat<60)temp=11.4-(absLat-50)*0.7;
+  else if(absLat<75)temp=4.4-(absLat-60)*0.7;
+  else temp=-6.1-(absLat-75)*0.5;
+  if(8<lat&&lat<35&&65<lng&&lng<100)temp=28.0-(lat-8)*0.12;
+  if(-10<lat&&lat<25&&95<lng&&lng<145)temp=27.5-absLat*0.08;
+  if(15<lat&&lat<35&&-15<lng&&lng<60)temp=32.0-(lat-15)*0.15;
+  if(-10<lat&&lat<15&&-20<lng&&lng<50)temp=27.0;
+  if(30<lat&&lat<45&&-10<lng&&lng<40)temp=18.0-(lat-30)*0.2;
+  if(45<lat&&lat<60&&-10<lng&&lng<30)temp=11.0-(lat-45)*0.4;
+  if(60<lat&&lat<72&&-10<lng&&lng<30)temp=5.0-(lat-60)*0.5;
+  if(-15<lat&&lat<5&&-75<lng&&lng<-45)temp=27.0;
+  if(-35<lat&&lat<-15&&115<lng&&lng<145)temp=30.0+(lat+15)*0.1;
+  if(20<lat&&lat<45&&100<lng&&lng<145)temp=22.0-(lat-20)*0.4;
+  if(25<lat&&lat<50&&-90<lng&&lng<-60)temp=22.0-(lat-25)*0.45;
+  if(50<lat&&lat<70&&-140<lng&&lng<-60)temp=4.0-(lat-50)*0.5;
+  temp=Math.round((temp+1.5)*10)/10; // add 2025 anomaly approx
+
+  let rainfall;
+  if(absLat<10)rainfall=2200;
+  else if(absLat<25)rainfall=900;
+  else if(absLat<40)rainfall=650;
+  else if(absLat<60)rainfall=700;
+  else rainfall=300;
+  if(5<lat&&lat<30&&65<lng&&lng<110)rainfall=1400;
+  if(-15<lat&&lat<5&&-75<lng&&lng<-45)rainfall=2400;
+  if(15<lat&&lat<35&&-15<lng&&lng<60)rainfall=30;
+  if(-35<lat&&lat<-15&&115<lng&&lng<140)rainfall=280;
+  if(30<lat&&lat<45&&-10<lng&&lng<40)rainfall=500;
+
+  const co2=421;
+  const risk=temp>35||absLat<20&&rainfall<100?'critical':temp>28||absLat<30?'high':temp>18?'medium':'low';
+
+  // Simple risk estimates
+  const flood=Math.min(99,Math.round((absLat<30?45:25)+(rainfall>1500?20:0)));
+  const drought=Math.min(99,Math.round((rainfall<100?75:rainfall<400?50:20)));
+  const cyclone=Math.min(99,Math.round((absLat<20?55:absLat<35?30:10)));
+  const heatwave=Math.min(99,Math.round(Math.max(5,(temp-18)*3)));
+  const wildfire=Math.min(99,Math.round((temp>25&&rainfall<600?55:20)));
+
+  return{
+    region:'Local Estimate',
+    current:{temp:parseFloat(temp.toFixed(1)),co2,rainfall,sea_level:206,risk},
+    disaster_risks:{flood,drought,cyclone,heatwave,wildfire}
+  };
+}
+
+async function searchPlace() {
+  const query = document.getElementById('place-search').value.trim();
+  if (!query) return;
+  const panel = document.getElementById('region-panel');
+  panel.innerHTML = '<div class="card-title">🔍 Searching...</div><div style="color:var(--muted);font-size:12px">Looking up ' + query + '...</div>';
+
+  let lat = null, lng = null, displayName = null;
+
+  // Try server-side geocode first
+  try {
+    const result = await apiFetch('/api/geocode/search/?q=' + encodeURIComponent(query));
+    if (result.lat && result.lng) {
+      lat = parseFloat(result.lat);
+      lng = parseFloat(result.lng);
+      displayName = result.display_name || null;
+    }
+  } catch(e) {}
+
+  // Direct Nominatim fallback
+  if (lat === null) {
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(query) + '&format=json&limit=1&accept-language=en';
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: ctrl.signal });
+      clearTimeout(tid);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        lat = parseFloat(data[0].lat);
+        lng = parseFloat(data[0].lon);
+        // Use just the first part of display_name (city/region) not the full long string
+        const parts = (data[0].display_name || '').split(',');
+        displayName = parts.slice(0, 2).map(s => s.trim()).join(', ');
+      }
+    } catch(e) {}
+  }
+
+  if (lat === null || lng === null) {
+    panel.innerHTML = '<div class="card-title">❌ Not Found</div><div style="color:var(--muted);font-size:12px">Could not find "' + query + '". Try a different name.</div>';
+    return;
+  }
+
+  setClickPin(lat, lng);
+  fetchClimate(lat, lng, displayName);
+}
+window.searchPlace = searchPlace;
+
+async function init(){
+  const resp=await apiFetch('/api/heatmap/').catch(()=>null);
+  const data=resp||{points:[]};
+  riskPoints=data.points;
+  riskPoints.forEach(p=>{
+    const color=TYPE_COLORS[p.type]||0xffffff,size=0.018+p.risk*0.028;
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(size,10,10),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.92}));
+    mesh.position.copy(latLngToVec3(p.lat,p.lng,1.012));mesh.userData=p;rotGroup.add(mesh);markerMeshes.push(mesh);
+    const ring=new THREE.Mesh(new THREE.RingGeometry(size*1.6,size*2.2,24),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.35,side:THREE.DoubleSide}));
+    ring.position.copy(latLngToVec3(p.lat,p.lng,1.013));ring.lookAt(new THREE.Vector3(0,0,0));ring.userData=p;rotGroup.add(ring);markerMeshes.push(ring);
+  });
+  const TC={flood:'#00d4ff',cyclone:'#ff3366',heatwave:'#ff6b35',drought:'#ffd700',wildfire:'#ff4400'};
+  document.getElementById('globe-legend').innerHTML=riskPoints.map((p,i)=>`<div onclick="window._gsp(${i})" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 6px;border-radius:6px;transition:background 0.2s" onmouseover="this.style.background='rgba(0,212,255,0.07)'" onmouseout="this.style.background='none'"><span style="color:${TC[p.type]||'#fff'}">●</span><span style="color:var(--muted);flex:1">${p.region}</span><span style="color:${riskColor(p.risk)};font-weight:700">${Math.round(p.risk*100)}%</span></div>`).join('');
+  document.getElementById('gs-total').textContent=riskPoints.length;
+  document.getElementById('gs-critical').textContent=riskPoints.filter(p=>p.risk>=0.8).length;
+  document.getElementById('gs-high').textContent=riskPoints.filter(p=>p.risk>=0.6&&p.risk<0.8).length;
+  document.getElementById('gs-avg').textContent=(riskPoints.reduce((s,p)=>s+p.risk,0)/riskPoints.length*100).toFixed(1)+'%';
+}
+window._gsp=i=>{const p=riskPoints[i];stopRotation();setClickPin(p.lat,p.lng);fetchClimate(p.lat,p.lng);};
+init();
+})();
+</script>
+{% endblock %}

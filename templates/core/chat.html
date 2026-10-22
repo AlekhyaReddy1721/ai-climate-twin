@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}AI Chat — Climate Twin{% endblock %}
+{% block page_title %}🤖 AI Climate Chat Assistant{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 280px;gap:16px;height:calc(100vh - 120px)">
+  <!-- Chat panel -->
+  <div class="card" style="display:flex;flex-direction:column;height:100%;padding:16px">
+    <div class="card-title">💬 Ask the AI Climate Expert</div>
+    <div id="chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px;min-height:0">
+      <div style="display:flex;gap:10px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">🤖</div>
+        <div class="card" style="max-width:520px;font-size:12px;line-height:1.6;border-color:rgba(0,212,255,0.2)">
+          Hello! I'm your AI Climate Expert. Ask me anything about <strong style="color:#00d4ff">climate change</strong>, <strong style="color:#ff6b35">global warming</strong>, <strong style="color:#00d4ff">sea level rise</strong>, <strong style="color:#ff3366">natural disasters</strong>, <strong style="color:#00ff88">renewable energy</strong>, or environmental policies.
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <input type="text" id="chat-input" class="input" placeholder="Ask about climate change..."
+        onkeydown="if(event.key==='Enter')sendMessage()" style="flex:1">
+      <button onclick="sendMessage()" class="btn btn-cyan" style="white-space:nowrap">Send ↵</button>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div style="display:flex;flex-direction:column;gap:12px;overflow-y:auto">
+    <div class="card">
+      <div class="card-title">💡 Suggested Questions</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        {% for q in suggested_questions %}
+        <button onclick="askQuestion('{{ q }}')"
+          style="text-align:left;font-size:11px;color:var(--muted);padding:6px 8px;border-radius:6px;background:none;border:none;cursor:pointer;transition:all 0.2s;font-family:inherit"
+          onmouseover="this.style.color='#00d4ff';this.style.background='rgba(0,212,255,0.06)'"
+          onmouseout="this.style.color='var(--muted)';this.style.background='none'">
+          → {{ q }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📚 Knowledge Topics</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for t in topics %}
+        <span style="padding:3px 8px;border-radius:12px;background:rgba(0,212,255,0.08);color:rgba(0,212,255,0.6);border:1px solid rgba(0,212,255,0.15);font-size:10px">{{ t }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = '';
+  appendMessage('user', question);
+  const typingId = appendTyping();
+  try {
+    const data = await apiFetch('/api/chat/ask/', { method:'POST', body: JSON.stringify({ question }) });
+    removeTyping(typingId);
+    appendMessage('bot', data.answer, data.sources);
+  } catch(e) {
+    removeTyping(typingId);
+    appendMessage('bot', 'Sorry, I encountered an error. Please try again.');
+  }
+}
+
+function askQuestion(q) {
+  document.getElementById('chat-input').value = q;
+  sendMessage();
+}
+
+function appendMessage(role, text, sources = []) {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:10px;' + (role === 'user' ? 'flex-direction:row-reverse' : '');
+  div.className = 'fade-in';
+
+  const avatar = role === 'user'
+    ? '<div style="width:32px;height:32px;border-radius:50%;background:rgba(0,255,136,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">👤</div>'
+    : '<div style="width:32px;height:32px;border-radius:50%;background:rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">🤖</div>';
+
+  const srcHtml = sources.length
+    ? `<div style="margin-top:8px;font-size:10px;color:var(--muted)">📚 ${sources.join(' · ')}</div>`
+    : '';
+
+  const bubbleStyle = role === 'user'
+    ? 'background:rgba(0,255,136,0.08);border-color:rgba(0,255,136,0.2)'
+    : 'border-color:rgba(0,212,255,0.15)';
+
+  div.innerHTML = `
+    ${avatar}
+    <div class="card" style="max-width:480px;font-size:12px;line-height:1.7;${bubbleStyle}">
+      ${text}${srcHtml}
+    </div>
+  `;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+let typingCounter = 0;
+function appendTyping() {
+  const id = 'typing-' + (++typingCounter);
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.id = id;
+  div.style.cssText = 'display:flex;gap:10px';
+  div.innerHTML = `
+    <div style="width:32px;height:32px;border-radius:50%;background:rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">🤖</div>
+    <div class="card" style="font-size:12px;border-color:rgba(0,212,255,0.15)">
+      <span style="color:var(--muted)">AI is thinking</span>
+      <span style="color:#00d4ff;animation:pulse-dot 1s infinite">...</span>
+    </div>
+  `;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return id;
+}
+
+function removeTyping(id) {
+  document.getElementById(id)?.remove();
+}
+</script>
+{% endblock %}

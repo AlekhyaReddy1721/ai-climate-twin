@@ -1,0 +1,40 @@
+{% with request.resolver_match.url_name as url_name %}
+<div class="nav-section-label">Core</div>
+<a href="{% url 'dashboard' %}"   class="nav-link {% if url_name == 'dashboard' %}active{% endif %}">
+  <span class="nav-icon">📊</span> Dashboard
+</a>
+<a href="{% url 'globe' %}"       class="nav-link {% if url_name == 'globe' %}active{% endif %}">
+  <span class="nav-icon">🌐</span> 3D Earth Globe
+</a>
+<a href="{% url 'predictions' %}" class="nav-link {% if url_name == 'predictions' %}active{% endif %}">
+  <span class="nav-icon">🔮</span> AI Predictions
+</a>
+<a href="{% url 'disasters' %}"   class="nav-link {% if url_name == 'disasters' %}active{% endif %}">
+  <span class="nav-icon">⚠️</span> Disaster Heatmap
+</a>
+
+<div class="nav-section-label">Simulation</div>
+<a href="{% url 'simulator' %}"   class="nav-link {% if url_name == 'simulator' %}active{% endif %}">
+  <span class="nav-icon">⚙️</span> Climate Simulator
+</a>
+<a href="{% url 'time_machine' %}" class="nav-link {% if url_name == 'time_machine' %}active{% endif %}">
+  <span class="nav-icon">⏳</span> Time Machine
+</a>
+<a href="{% url 'policy' %}"      class="nav-link {% if url_name == 'policy' %}active{% endif %}">
+  <span class="nav-icon">🏛️</span> Policy Simulator
+</a>
+
+<div class="nav-section-label">Tools</div>
+<a href="{% url 'carbon' %}"      class="nav-link {% if url_name == 'carbon' %}active{% endif %}">
+  <span class="nav-icon">🌿</span> Carbon Calculator
+</a>
+<a href="{% url 'rankings' %}"    class="nav-link {% if url_name == 'rankings' %}active{% endif %}">
+  <span class="nav-icon">🏆</span> Country Rankings
+</a>
+<a href="{% url 'reports' %}"     class="nav-link {% if url_name == 'reports' %}active{% endif %}">
+  <span class="nav-icon">📄</span> AI Reports
+</a>
+<a href="{% url 'chat' %}"        class="nav-link {% if url_name == 'chat' %}active{% endif %}">
+  <span class="nav-icon">🤖</span> AI Chat
+</a>
+{% endwith %}

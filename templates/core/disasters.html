@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block title %}Disaster Heatmap — Climate Twin{% endblock %}
+{% block page_title %}⚠️ Natural Disaster Risk Heatmap{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 300px;gap:16px">
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="card" style="padding:0;overflow:hidden;min-height:520px">
+      <div id="disaster-map" style="height:520px;border-radius:12px;background:#041828"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🌐 Global Risk Summary</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,212,255,0.08)">
+          <span style="color:var(--muted)">🌊 Flood Zones</span>
+          <span style="color:#00d4ff;font-weight:700" id="rs-flood">--</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,212,255,0.08)">
+          <span style="color:var(--muted)">🌀 Cyclone Zones</span>
+          <span style="color:#ff3366;font-weight:700" id="rs-cyclone">--</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,212,255,0.08)">
+          <span style="color:var(--muted)">🔥 Heatwave Zones</span>
+          <span style="color:#ff6b35;font-weight:700" id="rs-heatwave">--</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,212,255,0.08)">
+          <span style="color:var(--muted)">🏜️ Drought Zones</span>
+          <span style="color:#ffd700;font-weight:700" id="rs-drought">--</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0">
+          <span style="color:var(--muted)">🔥 Wildfire Zones</span>
+          <span style="color:#ff4400;font-weight:700" id="rs-wildfire">--</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="card">
+      <div class="card-title">🎨 Filter by Type</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button onclick="filterMap('all')"      id="filter-all"      class="btn btn-cyan btn-sm btn-full">All Disasters</button>
+        <button onclick="filterMap('flood')"    id="filter-flood"    class="btn btn-sm btn-full" style="border-color:rgba(0,212,255,0.4);color:#00d4ff">🌊 Floods</button>
+        <button onclick="filterMap('cyclone')"  id="filter-cyclone"  class="btn btn-sm btn-full" style="border-color:rgba(255,51,102,0.4);color:#ff3366">🌀 Cyclones</button>
+        <button onclick="filterMap('heatwave')" id="filter-heatwave" class="btn btn-sm btn-full" style="border-color:rgba(255,107,53,0.4);color:#ff6b35">🔥 Heatwaves</button>
+        <button onclick="filterMap('drought')"  id="filter-drought"  class="btn btn-sm btn-full" style="border-color:rgba(255,215,0,0.4);color:#ffd700">🏜️ Droughts</button>
+        <button onclick="filterMap('wildfire')" id="filter-wildfire" class="btn btn-sm btn-full" style="border-color:rgba(255,68,0,0.4);color:#ff4400">🔥 Wildfires</button>
+      </div>
+    </div>
+    <div class="card" style="flex:1;overflow-y:auto">
+      <div class="card-title">📍 Risk Point Details</div>
+      <div id="point-details" style="font-size:11px;color:var(--muted)">Click a marker on the map to view details.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">📊 Risk Legend</div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:11px">
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:#ff3366;display:inline-block"></span> Critical (80–100%)</div>
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:#ff6b35;display:inline-block"></span> High (60–79%)</div>
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:#ffd700;display:inline-block"></span> Medium (40–59%)</div>
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:#00ff88;display:inline-block"></span> Low (&lt;40%)</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const map = L.map('disaster-map', { zoomControl:true }).setView([20,0], 2);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution:'© OpenStreetMap © CARTO',
+  subdomains:'abcd', maxZoom:19
+}).addTo(map);
+
+let allPoints = [], markers = [];
+
+function clearMarkers() { markers.forEach(m => map.removeLayer(m)); markers = []; }
+
+function renderMarkers(pts) {
+  clearMarkers();
+  pts.forEach(p => {
+    const color = riskColor(p.risk);
+    const circle = L.circleMarker([p.lat, p.lng], {
+      radius: 6 + p.risk * 14,
+      fillColor: color, color: color,
+      weight: 1, opacity: 0.9, fillOpacity: 0.45
+    }).addTo(map);
+    circle.on('click', () => {
+      document.getElementById('point-details').innerHTML = `
+        <div style="margin-bottom:8px">
+          <div style="color:${color};font-weight:700;font-size:13px">${p.region}</div>
+          <div style="color:var(--muted);margin-top:4px">${p.type.toUpperCase()} · Risk: <strong style="color:${color}">${Math.round(p.risk*100)}%</strong></div>
+          <div style="color:var(--muted);font-size:10px;margin-top:4px">Lat: ${p.lat.toFixed(2)}, Lng: ${p.lng.toFixed(2)}</div>
+        </div>
+        <div class="progress"><div class="progress-fill" style="width:${p.risk*100}%;background:${color}"></div></div>`;
+    });
+    markers.push(circle);
+  });
+}
+
+function filterMap(type) {
+  const colors = { all:'#00d4ff', flood:'#00d4ff', cyclone:'#ff3366', heatwave:'#ff6b35', drought:'#ffd700', wildfire:'#ff4400' };
+  ['all','flood','cyclone','heatwave','drought','wildfire'].forEach(t => {
+    const btn = document.getElementById('filter-' + t);
+    if (!btn) return;
+    btn.style.background = t === type ? colors[t] + '22' : '';
+    btn.style.opacity    = t === type ? '1' : '0.55';
+  });
+  renderMarkers(type === 'all' ? allPoints : allPoints.filter(p => p.type === type));
+}
+
+async function init() {
+  const data = await apiFetch('/api/heatmap/');
+  allPoints = data.points;
+  renderMarkers(allPoints);
+  filterMap('all');
+
+  ['flood','cyclone','heatwave','drought','wildfire'].forEach(type => {
+    const pts = allPoints.filter(p => p.type === type);
+    const el = document.getElementById('rs-' + type);
+    if (el) el.textContent = pts.length + ' zone' + (pts.length !== 1 ? 's' : '') +
+      (pts.length ? ' · max ' + Math.round(Math.max(...pts.map(p=>p.risk))*100) + '%' : '');
+  });
+}
+
+init();
+</script>
+{% endblock %}

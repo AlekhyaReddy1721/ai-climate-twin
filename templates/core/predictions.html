@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}AI Predictions — Climate Twin{% endblock %}
+{% block page_title %}🔮 AI Climate Prediction System{% endblock %}
+
+{% block content %}
+<div class="grid-2 mb-6">
+  <!-- Temperature Prediction -->
+  <div class="card">
+    <div class="card-title">🌡️ Temperature Prediction</div>
+    <div class="mb-4">
+      <label class="label">Target Year: <span id="temp-year-val" style="color:#ff6b35">2050</span></label>
+      <input type="range" min="2026" max="2100" value="2050" id="temp-year"
+        oninput="document.getElementById('temp-year-val').textContent=this.value">
+    </div>
+    <button onclick="predictTemp()" class="btn btn-cyan btn-full mb-4">▶ Run Prediction</button>
+    <div id="temp-result"></div>
+  </div>
+
+  <!-- Disaster Prediction -->
+  <div class="card">
+    <div class="card-title" style="color:#ff3366">⚠️ Disaster Risk Prediction</div>
+    <div class="mb-3">
+      <label class="label">Region</label>
+      <select id="disaster-region" class="input">
+        <option>Global</option><option>Arctic</option><option>Amazon</option>
+        <option>Sahara</option><option>South Asia</option><option>Europe</option>
+        <option>North America</option><option>Pacific Islands</option><option>Australia</option>
+        <option>Sub-Saharan Africa</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="label">Year: <span id="dis-year-val" style="color:#ff3366">2050</span></label>
+      <input type="range" min="2026" max="2100" value="2050" id="dis-year"
+        oninput="document.getElementById('dis-year-val').textContent=this.value">
+    </div>
+    <button onclick="predictDisasters()" class="btn btn-red btn-full mb-4">▶ Predict Risks</button>
+    <div id="disaster-result"></div>
+  </div>
+</div>
+
+<!-- Multi-decade forecast -->
+<div class="card">
+  <div class="card-title">📈 Multi-Decade Climate Forecast (2025–2100)</div>
+  <div class="chart-wrap" style="height:280px"><canvas id="forecast-chart"></canvas></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function predictTemp() {
+  const year = document.getElementById('temp-year').value;
+  const data = await apiFetch(`/api/predictions/temperature/?year=${year}`);
+  const color = scenarioColor(data.scenario);
+  document.getElementById('temp-result').innerHTML = `
+    <div class="metric-card mb-3" style="--accent:${color}">
+      <div class="metric-label">Predicted Anomaly for ${data.year}</div>
+      <div class="metric-value" style="color:${color};font-size:36px">+${data.temp_anomaly}°C</div>
+      <div class="metric-sub">Scenario: <strong style="color:${color}">${data.scenario}</strong></div>
+    </div>
+    <div class="grid-2">
+      <div class="metric-card" style="--accent:#ff6b35">
+        <div class="metric-label">Absolute Temp</div>
+        <div style="font-size:20px;font-weight:700;color:#ff6b35">${data.absolute_temp}°C</div>
+      </div>
+      <div class="metric-card" style="--accent:#00ff88">
+        <div class="metric-label">Model Confidence</div>
+        <div style="font-size:20px;font-weight:700;color:#00ff88">${data.confidence}%</div>
+      </div>
+    </div>
+  `;
+}
+
+async function predictDisasters() {
+  const region = document.getElementById('disaster-region').value;
+  const year   = document.getElementById('dis-year').value;
+  const data   = await apiFetch(`/api/predictions/disasters/?region=${encodeURIComponent(region)}&year=${year}`);
+  const risks  = data.risks;
+  document.getElementById('disaster-result').innerHTML = `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+      Highest risk: <strong style="color:${riskColor(risks[data.highest_risk]/100)}">${data.highest_risk.toUpperCase()} (${risks[data.highest_risk]}%)</strong>
+    </div>
+    ${Object.entries(risks).map(([k,v]) => `
+      <div style="margin-bottom:10px">
+        <div class="flex items-center justify-between" style="margin-bottom:4px">
+          <span style="color:var(--muted);font-size:11px">${k}</span>
+          <span style="color:${riskColor(v/100)};font-size:11px;font-weight:700">${v}%</span>
+        </div>
+        <div class="progress"><div class="progress-fill" style="width:${v}%;background:${riskColor(v/100)}"></div></div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function buildForecast() {
+  const years = [2025,2030,2040,2050,2060,2070,2080,2090,2100];
+  const temps = await Promise.all(years.map(y => apiFetch(`/api/predictions/temperature/?year=${y}`)));
+  new Chart(document.getElementById('forecast-chart'), {
+    type: 'line',
+    data: {
+      labels: years,
+      datasets: [
+        { label: 'Temp Anomaly (°C)', data: temps.map(t=>t.temp_anomaly), borderColor:'#ff6b35', backgroundColor:'rgba(255,107,53,0.1)', fill:true, tension:0.4, yAxisID:'y' },
+        { label: 'Absolute Temp (°C)', data: temps.map(t=>t.absolute_temp), borderColor:'#ff3366', tension:0.4, yAxisID:'y1', borderDash:[4,4] },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:'#5a8aaa' } } },
+      scales:{
+        y:  { position:'left',  ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'}, title:{display:true,text:'Anomaly (°C)',color:'#5a8aaa'} },
+        y1: { position:'right', ticks:{color:'#5a8aaa'}, grid:{drawOnChartArea:false}, title:{display:true,text:'Absolute (°C)',color:'#5a8aaa'} },
+        x:  { ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'} }
+      }
+    }
+  });
+}
+
+buildForecast();
+predictTemp();
+predictDisasters();
+</script>
+{% endblock %}

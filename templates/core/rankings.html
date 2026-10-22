@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block title %}Country Rankings — Climate Twin{% endblock %}
+{% block page_title %}🏆 Global Sustainability Rankings{% endblock %}
+
+{% block content %}
+<div class="grid-2 mb-6">
+  <div class="card">
+    <div class="card-title">📊 Top 10 Sustainability Scores</div>
+    <div class="chart-wrap" style="height:260px"><canvas id="rankings-chart"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">🥧 Metric Distribution (Top 10)</div>
+    <div class="chart-wrap" style="height:260px"><canvas id="radar-chart"></canvas></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">🌍 Full Country Rankings</div>
+  <div style="overflow-x:auto">
+    <table class="data-table" id="rankings-table">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Country</th>
+          <th>Score</th>
+          <th>CO₂/capita</th>
+          <th>Renewables %</th>
+          <th>Pollution Index</th>
+          <th>Rating</th>
+        </tr>
+      </thead>
+      <tbody id="rankings-body"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function loadRankings() {
+  const data = await apiFetch('/api/rankings/');
+  const rows = data.rankings;
+
+  document.getElementById('rankings-body').innerHTML = rows.map(r => {
+    const sc = r.score >= 80 ? '#00ff88' : r.score >= 60 ? '#00d4ff' : r.score >= 40 ? '#ffd700' : '#ff3366';
+    const rating = r.score >= 80 ? 'Excellent' : r.score >= 60 ? 'Good' : r.score >= 40 ? 'Fair' : 'Poor';
+    const badgeCls = r.score >= 80 ? 'safe' : r.score >= 60 ? 'info' : r.score >= 40 ? 'warning' : 'critical';
+    return `
+      <tr>
+        <td style="color:var(--muted)">#${r.rank}</td>
+        <td style="font-weight:700">${r.country}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="color:${sc};font-weight:700;min-width:28px">${r.score}</span>
+            <div class="progress" style="width:80px"><div class="progress-fill" style="width:${r.score}%;background:${sc}"></div></div>
+          </div>
+        </td>
+        <td style="color:#ff6b35">${r.co2_per_capita}t</td>
+        <td style="color:#00ff88">${r.renewables}%</td>
+        <td style="color:#ff3366">${r.pollution}</td>
+        <td><span class="badge badge-${badgeCls}">${rating}</span></td>
+      </tr>
+    `;
+  }).join('');
+
+  const top10 = rows.slice(0, 10);
+  new Chart(document.getElementById('rankings-chart'), {
+    type: 'bar',
+    data: {
+      labels: top10.map(r => r.country),
+      datasets: [{
+        label: 'Sustainability Score',
+        data: top10.map(r => r.score),
+        backgroundColor: top10.map(r => r.score >= 80 ? 'rgba(0,255,136,0.6)' : r.score >= 60 ? 'rgba(0,212,255,0.6)' : 'rgba(255,215,0,0.6)'),
+        borderColor:     top10.map(r => r.score >= 80 ? '#00ff88' : r.score >= 60 ? '#00d4ff' : '#ffd700'),
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ max:100, ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'} },
+        y:{ ticks:{color:'#5a8aaa'}, grid:{color:'rgba(0,212,255,0.05)'} }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('radar-chart'), {
+    type: 'radar',
+    data: {
+      labels: ['Score', 'Renewables', 'Low CO₂', 'Low Pollution'],
+      datasets: top10.slice(0,4).map((r,i) => ({
+        label: r.country,
+        data: [r.score, r.renewables, 100 - r.co2_per_capita * 5, 100 - r.pollution],
+        borderColor: ['#00ff88','#00d4ff','#ffd700','#ff6b35'][i],
+        backgroundColor: ['rgba(0,255,136,0.1)','rgba(0,212,255,0.1)','rgba(255,215,0,0.1)','rgba(255,107,53,0.1)'][i],
+        pointBackgroundColor: ['#00ff88','#00d4ff','#ffd700','#ff6b35'][i],
+      }))
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:'#5a8aaa', boxWidth:10 } } },
+      scales:{ r:{ ticks:{color:'#5a8aaa',backdropColor:'transparent'}, grid:{color:'rgba(0,212,255,0.1)'}, pointLabels:{color:'#5a8aaa'} } }
+    }
+  });
+}
+
+loadRankings();
+</script>
+{% endblock %}
